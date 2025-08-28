@@ -229,7 +229,7 @@ model sessions {
   factor_id      String?          @db.Uuid
   aal            aal_level?
   not_after      DateTime?        @db.Timestamptz(6)
-  refreshed_at   DateTime?        @db.Timestamp(6)
+  refreshed_at   DateTime?         @db.Timestamp(6)
   user_agent     String?
   ip             String?          @db.Inet
   tag            String?
@@ -268,10 +268,12 @@ model sso_providers {
   resource_id       String?
   created_at        DateTime?           @db.Timestamptz(6)
   updated_at        DateTime?           @db.Timestamptz(6)
+  disabled          Boolean?
   saml_providers    saml_providers[]
   saml_relay_states saml_relay_states[]
   sso_domains       sso_domains[]
 
+  @@index([resource_id], map: "sso_providers_resource_id_pattern_idx")
   @@schema("auth")
 }
 
@@ -319,110 +321,123 @@ model users {
   mfa_factors                 mfa_factors[]
   one_time_tokens             one_time_tokens[]
   sessions                    sessions[]
-  owners                      owners?
 
   @@index([instance_id])
   @@index([is_anonymous])
   @@schema("auth")
 }
 
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model comments {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  post_id    String    @db.Uuid
+  user_id    String    @db.Uuid
+  text       String
+  is_deleted Boolean?  @default(false)
+  created_at DateTime? @default(now()) @db.Timestamp(6)
+  updated_at DateTime? @updatedAt
+  posts      posts     @relation(fields: [post_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([post_id], map: "idx_comments_post_id")
+  @@schema("public")
+}
+
+model follows {
+  id                                 String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  follower_pet_id                    String    @db.Uuid
+  followed_pet_id                    String    @db.Uuid
+  created_at                         DateTime? @default(now()) @db.Timestamp(6)
+  pets_follows_followed_pet_idTopets pets      @relation("follows_followed_pet_idTopets", fields: [followed_pet_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  pets_follows_follower_pet_idTopets pets      @relation("follows_follower_pet_idTopets", fields: [follower_pet_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([follower_pet_id, followed_pet_id])
+  @@index([followed_pet_id], map: "idx_follows_followed")
+  @@index([follower_pet_id], map: "idx_follows_follower")
+  @@schema("public")
+}
+
+model likes {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  post_id    String    @db.Uuid
+  user_id    String    @db.Uuid
+  created_at DateTime? @default(now()) @db.Timestamp(6)
+  updated_at DateTime? @updatedAt
+  posts      posts     @relation(fields: [post_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([post_id, user_id])
+  @@index([post_id], map: "idx_likes_post_id")
+  @@schema("public")
+}
+
 model owners {
-  id                                              String          @id @db.Uuid
-  display_name                                    String
-  avatar_url                                      String?
-  bio                                             String?
-  location                                        String?
-  phone_number                                    String?
-  created_at                                      DateTime?       @default(now()) @db.Timestamp(6)
-  updated_at                                      DateTime?       @default(now()) @db.Timestamp(6)
-  users                                           users           @relation(fields: [id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  reports_users_reports_users_reported_idToowners reports_users[] @relation("reports_users_reported_idToowners")
-  reports_users_reports_users_reporter_idToowners reports_users[] @relation("reports_users_reporter_idToowners")
-  suspensions                                     suspensions[]
-  user_blocks_user_blocks_blocked_idToowners      user_blocks[]   @relation("user_blocks_blocked_idToowners")
-  user_blocks_user_blocks_blocker_idToowners      user_blocks[]   @relation("user_blocks_blocker_idToowners")
-  user_follows_user_follows_follower_idToowners   user_follows[]  @relation("user_follows_follower_idToowners")
-  user_follows_user_follows_following_idToowners  user_follows[]  @relation("user_follows_following_idToowners")
-  user_settings                                   user_settings?
-  verifications                                   verifications[]
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  supabase_id String    @unique @db.Uuid
+  name        String    @db.VarChar(100)
+  last_name   String    @db.VarChar(100)
+  birth_date  DateTime? @db.Date
+  email       String    @unique @db.VarChar(150)
+  avatar_url  String?
+  created_at  DateTime? @default(now()) @db.Timestamp(6)
+  updated_at  DateTime? @db.Timestamptz(6)
+  pets        pets[]
+  posts       posts[]
 
   @@schema("public")
 }
 
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
-model reports_users {
-  id                                       Int       @id @default(autoincrement())
-  reporter_id                              String?   @db.Uuid
-  reported_id                              String?   @db.Uuid
-  reason                                   String
-  status                                   String?   @default("pending")
-  created_at                               DateTime? @default(now()) @db.Timestamp(6)
-  owners_reports_users_reported_idToowners owners?   @relation("reports_users_reported_idToowners", fields: [reported_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  owners_reports_users_reporter_idToowners owners?   @relation("reports_users_reporter_idToowners", fields: [reporter_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-
-  @@schema("public")
-}
-
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
-model suspensions {
-  id              Int       @id @default(autoincrement())
-  user_id         String?   @db.Uuid
-  reason          String
-  suspended_until DateTime? @db.Timestamp(6)
-  created_at      DateTime? @default(now()) @db.Timestamp(6)
-  owners          owners?   @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-
-  @@schema("public")
-}
-
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
-model user_blocks {
-  id                                    Int       @id @default(autoincrement())
-  blocker_id                            String?   @db.Uuid
-  blocked_id                            String?   @db.Uuid
+model pets {
+  id                                    String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  owner_id                              String    @db.Uuid
+  name                                  String    @db.VarChar(100)
+  type                                  String    @db.VarChar(50)
+  breed                                 String?   @db.VarChar(100)
+  age                                   Int?
+  bio                                   String?
+  avatar_url                            String?
   created_at                            DateTime? @default(now()) @db.Timestamp(6)
-  owners_user_blocks_blocked_idToowners owners?   @relation("user_blocks_blocked_idToowners", fields: [blocked_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  owners_user_blocks_blocker_idToowners owners?   @relation("user_blocks_blocker_idToowners", fields: [blocker_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-
-  @@unique([blocker_id, blocked_id])
-  @@schema("public")
-}
-
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
-model user_follows {
-  id                                       Int       @id @default(autoincrement())
-  follower_id                              String?   @db.Uuid
-  following_id                             String?   @db.Uuid
-  created_at                               DateTime? @default(now()) @db.Timestamp(6)
-  owners_user_follows_follower_idToowners  owners?   @relation("user_follows_follower_idToowners", fields: [follower_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  owners_user_follows_following_idToowners owners?   @relation("user_follows_following_idToowners", fields: [following_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-
-  @@unique([follower_id, following_id])
-  @@schema("public")
-}
-
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
-model user_settings {
-  id                    Int      @id @default(autoincrement())
-  user_id               String?  @unique @db.Uuid
-  language              String?  @default("es")
-  notifications_enabled Boolean? @default(true)
-  dark_mode             Boolean? @default(false)
-  is_private            Boolean? @default(false)
-  owners                owners?  @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  updated_at                            DateTime? @updatedAt
+  follows_follows_followed_pet_idTopets follows[] @relation("follows_followed_pet_idTopets")
+  follows_follows_follower_pet_idTopets follows[] @relation("follows_follower_pet_idTopets")
+  owners                                owners    @relation(fields: [owner_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  posts                                 posts[]
 
   @@schema("public")
 }
 
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
-model verifications {
-  id          Int       @id @default(autoincrement())
-  user_id     String?   @db.Uuid
-  type        String
-  verified_at DateTime? @db.Timestamp(6)
-  owners      owners?   @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+model posts {
+  id            String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  pet_id        String     @db.Uuid
+  owner_id      String     @db.Uuid
+  caption       String?
+  media_url     String[]
+  like_count    Int?       @default(0)
+  comment_count Int?       @default(0)
+  is_hidden     Boolean?   @default(false)
+  created_at    DateTime?  @default(now()) @db.Timestamp(6)
+  updated_at    DateTime?  @updatedAt
+  comments      comments[]
+  likes         likes[]
+  owners        owners     @relation(fields: [owner_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  pets          pets       @relation(fields: [pet_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  reports       reports[]
 
+  @@index([pet_id], map: "idx_posts_pet_id")
+  @@schema("public")
+}
+
+model reports {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  post_id     String    @db.Uuid
+  reported_by String    @db.Uuid
+  reason      String?   @db.VarChar(100)
+  description String?
+  status      String?   @default("pending") @db.VarChar(50)
+  created_at  DateTime? @default(now()) @db.Timestamp(6)
+  updated_at  DateTime? @updatedAt
+  reviewed_at DateTime? @db.Timestamp(6)
+  reviewed_by String?   @db.Uuid
+  posts       posts     @relation(fields: [post_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([post_id], map: "idx_reports_post_id")
   @@schema("public")
 }
 
