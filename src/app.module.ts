@@ -1,4 +1,5 @@
-import { Module } from '@nestjs/common';
+import { MiddlewareConsumer, Module, NestModule, RequestMethod } from '@nestjs/common';
+import { SupabaseAuthMiddleware } from './middleware/supabase-auth.middleware';
 
 // Module Posts
 import { PostsModule } from './posts/posts.module';
@@ -14,16 +15,29 @@ import { OwnersModule } from './owners/owners.module';
 import { LikesModule } from './likes/likes.module';
 
 import { PrismaModule } from './prisma/prisma.module';
+import { PetsController } from './pets/pets.controller';
+import { PetsService } from './pets/pets.service';
+import { PetsModule } from './pets/pets.module';
 import * as dotenv from 'dotenv';
+import { AuthModule } from './auth/auth.module';
 dotenv.config();
 
 @Module({
   imports: [
     PrismaModule, 
-    PostsModule, LikesModule, OwnersModule,
-   
+    PostsModule, LikesModule, OwnersModule, PetsModule, AuthModule,
   ],
-  controllers: [PostsController, OwnersController],
-  providers: [OwnersService, PostsService],
+  controllers: [PostsController, OwnersController, PetsController],
+  providers: [OwnersService, PostsService, PetsService],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer
+      .apply(SupabaseAuthMiddleware)
+      .exclude(
+        { path: 'owners/sign-in', method: RequestMethod.POST },
+        { path: 'owners/sign-up', method: RequestMethod.POST }
+      )
+      .forRoutes('*');
+  }
+}

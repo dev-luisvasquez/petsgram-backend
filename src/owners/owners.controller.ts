@@ -1,9 +1,10 @@
-import { Controller } from '@nestjs/common';
+import { Controller, UseGuards } from '@nestjs/common';
 import { Body, Post } from '@nestjs/common';
 import { OwnersService } from './owners.service';
 import { CreateOwner, SupabaseUser } from './dto/owners.dto';
 import { v4 as uuidv4 } from 'uuid';
 import { supabase } from '../supabase.client'; // Importa el cliente de Supabase
+import { SupabaseAuthMiddleware } from '../middleware/supabase-auth.middleware';
 
 @Controller('owners')
 export class OwnersController {
@@ -42,7 +43,7 @@ export class OwnersController {
         const { email, password } = data;
 
         // Autenticar usuario en Supabase
-        const { data: { user }, error } = await supabase.auth.signInWithPassword({
+        const { data: { session, user }, error } = await supabase.auth.signInWithPassword({
             email,
             password
         });
@@ -51,8 +52,13 @@ export class OwnersController {
             throw new Error(`Error al iniciar sesión en Supabase: ${error.message}`);
         }
 
-        // Aquí puedes manejar la sesión del usuario en tu aplicación
-        return { user };
+        // Retornar el usuario y el token de sesión
+        return { user, token: session?.access_token };
     }
 
+    @UseGuards(SupabaseAuthMiddleware)
+    @Post('/other-route')
+    async otherRoute(@Body() data: any) {
+        // Aquí puedes agregar lógica para otras rutas protegidas
+    }
 }
